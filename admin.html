@@ -279,7 +279,7 @@ function parseSN(ws){
   const CMS=['Approved','Cancelled','N/A','Pending','Rejected','Requested','Unknown'];
 
   // Excel serial date → JS Date
-  const toDate=v=>{if(!v)return null;if(typeof v==='number'){const d=new Date((v-25569)*86400000);return isNaN(d)?null:d;}try{const d=new Date(v);return isNaN(d)?null:d;}catch{return null;}};
+  const toDate=v=>{if(!v&&v!==0)return null;if(typeof v==='number'){const d=new Date((v-25569)*86400000);return isNaN(d)?null:d;}if(v instanceof Date)return isNaN(v)?null:v;try{const d=new Date(String(v).trim());return isNaN(d)?null:d;}catch{return null;}};
 
   // Region: Region.1 first (Central/Western/Eastern), fallback Region
   const nR=v=>{if(!v)return 7;const s=v.toString().trim().toLowerCase();
@@ -313,10 +313,10 @@ function parseSN(ws){
     if(s==='scheduled')return 3;
     return 3;};
 
-  const nI=v=>{if(!v)return 0;const s=v.toString().toLowerCase();return(s==='yes'||s==='sa'||s==='y')?1:0;};
+  const nI=v=>{if(!v&&v!==true&&v!==1)return 0;const s=v.toString().toLowerCase().trim();return(s==='yes'||s==='sa'||s==='y'||s==='true'||s==='1'||v===true||v===1)?1:0;};
   const nCat=v=>{const m={'Access Network':0,'CMP':1,'Core Network':2,'DCN Network':3,'Electro Mechanical':4,'Fiber':5,'HCSO':6,'IOT-Mobile Core':7,'IT':8,'Network':9};return m[v?.toString().trim()]??10;};
 
-  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false});
   const hdrs=data[0].map(c=>String(c).trim());
   const gi=(...ks)=>{for(const k of ks){const i=hdrs.findIndex(h=>h===k||h.toLowerCase()===k.toLowerCase());if(i>=0)return i;}return -1;};
 
