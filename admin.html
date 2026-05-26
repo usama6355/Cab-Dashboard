@@ -276,32 +276,100 @@ function parseSN(ws){
   const REGS=['All Regions','Central','Eastern','Neom','Northern','Other','Southern','Unknown','Western'];
   const RFCS=['E-CAB','EMDT','MDT','OLO MDT','Other','RFO','TCN','TCN-H','Unknown'];
   const CABS=['Approved','Rejected','Cancelled','Pending','Acknowledged','Rescheduled','On Hold','Violation'];
-  const nR=v=>{if(!v)return 7;const s=v.toLowerCase();if(['center','central','riyadh'].some(x=>s.includes(x)))return 1;if(['east','eastern','dammam'].some(x=>s.includes(x)))return 2;if(s.includes('neom'))return 3;if(['north','madinah'].some(x=>s.includes(x)))return 4;if(['south','abha','jizan'].some(x=>s.includes(x)))return 6;if(s.includes('west')||s.includes('jeddah'))return 8;return 7;};
-  const nF=v=>{if(!v)return 8;const s=v.toString().trim().toUpperCase().replace(/\s/g,'');if(s.includes('OLOMDT'))return 3;if(s==='MDT')return 2;if(s.includes('TCN'))return 6;if(s==='RFO')return 5;if(s.includes('EMDT'))return 1;if(s==='E-CAB')return 0;return 4;};
-  const nB=v=>{if(!v)return 3;const s=v.toLowerCase();if(s.includes('approv')&&!s.includes('not')&&!s.includes('yet'))return 0;if(s.includes('reject'))return 1;if(s.includes('cancel'))return 2;if(s.includes('violation'))return 7;return 3;};
-  const nI=v=>{if(!v)return 0;return(v.toString().toLowerCase()==='yes'||v.toString().toUpperCase()==='SA')?1:0;};
-  const nC=v=>{if(!v)return 3;const s=v.toLowerCase();if(s.includes('approv')&&!s.includes('not')&&!s.includes('yet'))return 0;if(s.includes('reject'))return 4;return 3;};
+  const CMS=['Approved','Cancelled','N/A','Pending','Rejected','Requested','Unknown'];
+
+  // Excel serial date → JS Date
+  const toDate=v=>{if(!v)return null;if(typeof v==='number'){const d=new Date((v-25569)*86400000);return isNaN(d)?null:d;}try{const d=new Date(v);return isNaN(d)?null:d;}catch{return null;}};
+
+  // Region: Region.1 first (Central/Western/Eastern), fallback Region
+  const nR=v=>{if(!v)return 7;const s=v.toString().trim().toLowerCase();
+    if(s==='central'||s.includes('riyadh')||s.includes('center'))return 1;
+    if(s==='eastern'||s.includes('east')||s.includes('dammam'))return 2;
+    if(s.includes('neom'))return 3;
+    if(s==='north'||s==='northern'||s.includes('madinah')||s.includes('tabuk'))return 4;
+    if(s==='south'||s==='southern'||s.includes('abha')||s.includes('jizan'))return 6;
+    if(s==='western'||s==='west'||s.includes('jeddah')||s.includes('makkah'))return 8;
+    if(s.includes('all')||s.includes('kingdom'))return 0;
+    return 7;};
+
+  // RFC type from Change Types
+  const nF=v=>{if(!v)return 8;const s=v.toString().trim().toUpperCase().replace(/\s/g,'');
+    if(s.includes('OLOMDT'))return 3;if(s==='MDT')return 2;
+    if(s.includes('TCNH')||s==='TCN-H')return 7;if(s==='TCN')return 6;
+    if(s==='RFO')return 5;if(s.includes('EMDT'))return 1;if(s==='E-CAB')return 0;return 4;};
+
+  // CAB Feedback from Approval column (Approved/Rejected/Not Yet Requested/Requested)
+  const nB=v=>{if(!v)return 3;const s=v.toString().trim().toLowerCase();
+    if(s==='approved')return 0;
+    if(s==='rejected')return 1;
+    if(s.includes('cancel'))return 2;
+    if(s==='requested')return 5;
+    return 3;};// Not Yet Requested → Pending
+
+  // CM Status from State column (New/Closed/Canceled/Scheduled)
+  const nC=v=>{if(!v)return 3;const s=v.toString().trim().toLowerCase();
+    if(s==='closed')return 0;
+    if(s==='canceled'||s==='cancelled')return 1;
+    if(s==='scheduled')return 3;
+    return 3;};
+
+  const nI=v=>{if(!v)return 0;const s=v.toString().toLowerCase();return(s==='yes'||s==='sa'||s==='y')?1:0;};
   const nCat=v=>{const m={'Access Network':0,'CMP':1,'Core Network':2,'DCN Network':3,'Electro Mechanical':4,'Fiber':5,'HCSO':6,'IOT-Mobile Core':7,'IT':8,'Network':9};return m[v?.toString().trim()]??10;};
-  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+
+  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
   const hdrs=data[0].map(c=>String(c).trim());
   const gi=(...ks)=>{for(const k of ks){const i=hdrs.findIndex(h=>h===k||h.toLowerCase()===k.toLowerCase());if(i>=0)return i;}return -1;};
-  const [ni,acti,regi,rfi,bi,impi,reqi,agi,pdi,cati,cmi]=[gi('Number'),gi('Short description'),gi('Region.1','Region'),gi('Change Types'),gi('State'),gi('Service Impact'),gi('Requested by'),gi('Assignment group'),gi('Planned start date','Opened'),gi('Category'),gi('Approval')];
-  const rd=[];for(let i=1;i<data.length;i++){const row=data[i];const g=idx=>idx>=0?String(row[idx]||'').replace(/ /g,'').trim():'';const act=g(acti);if(!act||act.toLowerCase()==='nan')continue;let dt=null;try{dt=new Date(g(pdi));}catch{}if(!dt||isNaN(dt))continue;rd.push({row,dt,act});}
+
+  // Column indices - NOTE: Approval→CAB feedback, State→workflow
+  const ni=gi('Number'),acti=gi('Short description'),
+    reg1i=gi('Region.1'),regi=gi('Region'),
+    rfi=gi('Change Types'),
+    apri=gi('Approval'),    // → CAB Feedback (Approved/Rejected/Pending)
+    stati=gi('State'),      // → CM Status (Closed/New/Canceled)
+    impi=gi('Service Impact'),
+    reqi=gi('Requested by'),agi=gi('Assignment group'),
+    pdi=gi('Planned start date'),opi=gi('Opened'),
+    cati=gi('Category');
+
+  const rd=[];
+  for(let i=1;i<data.length;i++){
+    const row=data[i];
+    const g=idx=>idx>=0?String(row[idx]===null||row[idx]===undefined?'':row[idx]).replace(/\xa0/g,'').trim():'';
+    const act=g(acti);if(!act||act.toLowerCase()==='nan'||act==='')continue;
+    // Try Planned start date first, then Opened
+    let dt=toDate(row[pdi]!==''&&pdi>=0?row[pdi]:(opi>=0?row[opi]:null));
+    if(!dt&&opi>=0)dt=toDate(row[opi]);
+    if(!dt)continue;
+    rd.push({row,dt,act});
+  }
   rd.sort((a,b)=>a.dt-b.dt);
-  const gWk=d=>{const t=new Date(d);t.setHours(0,0,0,0);t.setDate(t.getDate()-t.getDay()+1);return t.toISOString().substring(0,10);};
-  const wks={};rd.forEach(x=>{const wk=gWk(x.dt);if(!wks[wk])wks[wk]=[];wks[wk].push(x);});
+
+  const getWk=d=>{const t=new Date(d);t.setHours(0,0,0,0);const day=t.getDay();t.setDate(t.getDate()-(day===0?6:day-1));return t.toISOString().substring(0,10);};
+  const wks={};rd.forEach(x=>{const wk=getWk(x.dt);if(!wks[wk])wks[wk]=[];wks[wk].push(x);});
+
   const sess=[],sW=[],cR=[],tR=[],reqMap={};let reqIdx=1;const reqList=[''];let si=0;
-  const g2=(row,idx)=>idx>=0?String(row[idx]||'').replace(/ /g,'').trim():'';
+  const g2=(row,idx)=>idx>=0?String(row[idx]===null||row[idx]===undefined?'':row[idx]).replace(/\xa0/g,'').trim():'';
+
   Object.entries(wks).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([wkDate,rows])=>{
-    const d=new Date(wkDate);sess.push([wkDate,d.getFullYear(),d.getMonth()+1,Math.floor(d.getMonth()/3)+1,si+1]);sW.push(si+1);
-    rows.forEach(x=>{const{row,act}=x;const rfc=nF(g2(row,rfi));const vi=g2(row,bi).toLowerCase().includes('violation')?1:0;
-      cR.push([si,nR(g2(row,regi)),rfc,nC(g2(row,cmi)),nB(g2(row,bi)),nI(g2(row,impi)),0,vi,nCat(g2(row,cati))]);
-      let ri2=0;const req=g2(row,reqi)||g2(row,agi);if(req){const rk=req.substring(0,30);if(!reqMap[rk]){reqMap[rk]=reqIdx++;reqList.push(rk);}ri2=reqMap[rk];}
-      tR.push([wkDate,g2(row,ni),act.substring(0,60),g2(row,regi),'','',CABS[nB(g2(row,bi))]||'','',ri2,g2(row,agi),vi]);
-    });si++;
+    const d=new Date(wkDate);
+    sess.push([wkDate,d.getFullYear(),d.getMonth()+1,Math.floor(d.getMonth()/3)+1,si+1]);
+    sW.push(si+1);
+    rows.forEach(({row,act})=>{
+      const rfc=nF(g2(row,rfi));
+      const regVal=reg1i>=0&&g2(row,reg1i)?g2(row,reg1i):g2(row,regi);
+      const cabFeedback=nB(g2(row,apri));   // from Approval column
+      const cmStatus=nC(g2(row,stati));     // from State column
+      const vi=cabFeedback===7?1:0;
+      cR.push([si,nR(regVal),rfc,cmStatus,cabFeedback,nI(g2(row,impi)),0,vi,nCat(g2(row,cati))]);
+      let ri2=0;const req=g2(row,reqi)||g2(row,agi);
+      if(req){const rk=req.substring(0,30);if(!reqMap[rk]){reqMap[rk]=reqIdx++;reqList.push(rk);}ri2=reqMap[rk];}
+      tR.push([wkDate,g2(row,ni),act.substring(0,60),regVal,'',CABS[cabFeedback]||'',CMS[cmStatus]||'','',ri2,g2(row,agi),vi]);
+    });
+    si++;
   });
   return{cd:{regions:REGS,rfcs:RFCS,cabs:CABS,impacts:['NSA','SA'],domcats:['Access','CMP','Core','DCN','E&M','Fiber','HCSO','IOT','IT','Network','Other'],sessions:sess,seq_weeks:sW,rows:cR,format:'servicenow'},td:{req_list:reqList,rows:tR}};
 }
+
 function parseCAB(wb){
   const REGS=['All Regions','Central','Eastern','Neom','Northern','Other','Southern','Unknown','Western'];
   const RFCS=['E-CAB','EMDT','MDT','Other','RFO','TCN','TCN-H','Unknown'];
