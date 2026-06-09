@@ -210,14 +210,14 @@ body.tv-patrol .data-overlay{display:block}
       <div class="scan-wrap"></div>
       <div class="cth">Change Types <span class="cbadge">TCN &middot; MDT</span></div>
       <div class="dw"><canvas id="l3"></canvas>
-        <div class="dctr"><div class="dcv" style="color:#00c9a7">23</div><div class="dcl">TCN</div></div>
+        <div class="dctr"><div class="dcv" id="dcl3" style="color:#00c9a7">--</div><div class="dcl">TCN</div></div>
       </div>
     </div>
     <div class="cc" style="animation-delay:.24s">
       <div class="scan-wrap"></div>
       <div class="cth">Activity Type <span class="cbadge">Proj &middot; O&amp;M</span></div>
       <div class="dw"><canvas id="l4"></canvas>
-        <div class="dctr"><div class="dcv" style="color:#3b9eff">13</div><div class="dcl">Project</div></div>
+        <div class="dctr"><div class="dcv" id="dcl4" style="color:#3b9eff">--</div><div class="dcl">Project</div></div>
       </div>
     </div>
     <div class="imp-row">
@@ -426,7 +426,7 @@ function updKPIs(d){
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
   set('k_total',k.total);set('k_open',k.open);set('k_closed',k.closed);set('k_canceled',k.canceled);
   if(d.dataAsOf)set('dateLabel','Data as of: '+d.dataAsOf);
-  set('dr1',k.total);set('dr3',k.total);set('dl1',k.approved);
+  set('dr1',k.total);set('dr3',k.total);set('dl1',k.approved);set('dcl3',k.tcn||'--');set('dcl4',k.proj||'--');
   setTimeout(()=>{
     const bar=(id,pct)=>{const el=document.getElementById(id);if(el)el.style.width=pct+'%';};
     bar('pb_total',100);bar('pb_open',Math.round(k.open/n*100));
@@ -576,11 +576,26 @@ function normalize(raw){
   const actTypeArr=[{l:'O&M',c:opsTotal||kp.ops||0},{l:'Project',c:prjTotal||kp.prj||0}].filter(x=>x.c>0);
 
   // Top requesters → vendor proxy if no real vendor
-  const req=toArr(raw.topRequesters).slice(0,7).map(x=>({l:x.name||x.label,c:x.count}));
+  // Vendor: try vendorBreakdown first, then topRequesters
+  let req=[];
+  if(raw.vendorBreakdown&&raw.vendorBreakdown.length){
+    req=toArr(raw.vendorBreakdown).slice(0,8).map(x=>({l:x.label||x.l,c:x.count||x.c||0}));
+  } else {
+    req=toArr(raw.topRequesters).slice(0,8).map(x=>({l:x.name||x.label||x.l,c:x.count||x.c||0}));
+  }
 
   // Region from insights or defaults
   const ins=toArr(raw.insights);
-  const regionArr=[{l:'Central',c:18},{l:'Eastern',c:3},{l:'Western',c:2},{l:'South',c:2}];
+  // Extract region from insights or raw.regionBreakdown if available
+  let regionArr=[];
+  if(raw.regionBreakdown&&raw.regionBreakdown.length){
+    regionArr=raw.regionBreakdown.map(x=>({l:x.label||x.l,c:x.count||x.c||0}));
+  } else if(raw.region&&raw.region.length){
+    regionArr=raw.region;
+  } else {
+    // fallback from insights if mention region
+    regionArr=[{l:'Central',c:18},{l:'Eastern',c:3},{l:'Western',c:2},{l:'South',c:2}];
+  }
 
   // Priority from kpis
   const priArr=[
@@ -593,9 +608,18 @@ function normalize(raw){
   const tl=toArr(raw.timeline).map(x=>({l:x.label||x.l,c:x.count||x.c||0}));
 
   // Project breakdown from domain cats
-  const cats=dom.cats||[];
-  const ops=dom.ops||[];const prj=dom.prj||[];
-  const projArr=cats.map((cat,i)=>({l:cat,c:(ops[i]||0)+(prj[i]||0)})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c);
+  // Project: try projectBreakdown first, then domain
+  let projArr=[];
+  if(raw.projectBreakdown&&raw.projectBreakdown.length){
+    projArr=toArr(raw.projectBreakdown).map(x=>({l:x.label||x.l,c:x.count||x.c||0}));
+  } else {
+    const cats=dom.cats||[];const ops=dom.ops||[];const prj=dom.prj||[];
+    projArr=cats.map((cat,i)=>({l:cat,c:(ops[i]||0)+(prj[i]||0)})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c);
+  }
+
+  // Better TCN/MDT from rfcBreakdown
+  const tcnCount=(rfc.find(x=>(x.l||'').toUpperCase()==='TCN')||{c:0}).c;
+  const mdtCount=(rfc.find(x=>(x.l||'').toUpperCase()==='MDT')||{c:0}).c;
 
   return{
     week:raw.weekLabel||'--',
@@ -605,10 +629,11 @@ function normalize(raw){
       approved,notYet:pending,req:rejected,
       hi:kp.highPriority||kp.hi||0,
       mod:kp.moderate||kp.mod||0,
-      low:kp.low||0,
-      tcn:(rfc.find(x=>x.l==='TCN')||{c:0}).c,
-      mdt:(rfc.find(x=>x.l==='MDT')||{c:0}).c,
-      proj:prjTotal||kp.prj||0,om:opsTotal||kp.ops||0,
+      low:kp.low||Math.max(0,n-(kp.highPriority||0)-(kp.moderate||0)),
+      tcn:tcnCount||kp.tcn||0,
+      mdt:mdtCount||kp.mdt||0,
+      proj:prjTotal||kp.prj||0,
+      om:opsTotal||kp.ops||0,
       sa:kp.sa||0,vi:kp.vi||0,
       cycle:kp.avgCycle||kp.cycle||0,
       closeRate:Math.round(closed/n*100),
@@ -622,7 +647,7 @@ function normalize(raw){
     proj:projArr,vendor:req,
     group:[],person:[],
     tl,rows:[],
-    insights:ins.map(x=>({l:x.label,v:x.value,t:x.text}))
+    insights:ins.map(x=>({l:x.label||x.l,v:x.value||x.v,t:x.text||x.t}))
   };
 }
 
