@@ -269,19 +269,33 @@ function buildPayload(CD,TD){
   // Build region breakdown from rows
   const regCounts={};rows.forEach(r=>{const rv=R[r[1]]||'Unknown';regCounts[rv]=(regCounts[rv]||0)+1;});
   const regionBreakdown=Object.entries(regCounts).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
-  // Build vendor/project breakdown
-  const vendorMap={};const projMap={};
+  // tR indices: [0]date [1]crq [2]act [3]region [4]'' [5]cab [6]cm [7]'' [8]reqIdx [9]assignGroup [10]vi
+  //             [11]project [12]vendor [13]activityBy [14]priority [15]visImpact [16]city [17]site
+  const vendorMap={};const projMap={};const actTypeMap={};const cityMap={};const siteMap={};
+  let hiPri=0,modPri=0,lowPri=0,viCount=0;
   (TD.rows||[]).forEach(r=>{
-    if(r[9])vendorMap[r[9]]=(vendorMap[r[9]]||0)+1;
-    if(r[2])projMap[r[2]]=(projMap[r[2]]||0)+1;
+    if(r[12]&&r[12]!='nan'&&r[12]!='')vendorMap[r[12]]=(vendorMap[r[12]]||0)+1;
+    if(r[11]&&r[11]!='nan'&&r[11]!='')projMap[r[11]]=(projMap[r[11]]||0)+1;
+    if(r[13]&&r[13]!='nan'&&r[13]!='')actTypeMap[r[13]]=(actTypeMap[r[13]]||0)+1;
+    if(r[16]&&r[16]!='nan'&&r[16]!='')cityMap[r[16]]=(cityMap[r[16]]||0)+1;
+    if(r[17]&&r[17]!='nan'&&r[17]!='')siteMap[r[17]]=(siteMap[r[17]]||0)+1;
+    const p=String(r[14]||'').toLowerCase();
+    if(p.includes('high')||p.includes('2 -'))hiPri++;
+    else if(p.includes('moderate')||p.includes('3 -'))modPri++;
+    else if(p.includes('low')||p.includes('4 -'))lowPri++;
+    if(String(r[15]||'').toLowerCase()==='yes')viCount++;
   });
   const vendorBreakdown=Object.entries(vendorMap).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
   const projectBreakdown=Object.entries(projMap).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
-  // Priority breakdown
-  const priMap={};rows.forEach(r=>{
-    const pLabel=r.length>9?'Unknown':'Unknown';
-  });
-  return{updated:new Date().toISOString(),weekLabel:'W'+sessions.length+' — '+(sessions.length?sessions[sessions.length-1][0]:'Current'),kpis:{total:n,approved:ap,rejected:rj,approvalRate:apr,rejectedRate:Math.round(rj/tot*100),nsa,sa,saRate:sar,sessions:sessions.length,violations:vc,ops,prj},timeline:tl,cabBreakdown:cabb,rfcBreakdown:rfcb,regionBreakdown,vendorBreakdown,projectBreakdown,domain:{cats:DC,ops:co,prj:cp},topRequesters:tr,insights:ins};
+  const actTypeBreakdown=Object.entries(actTypeMap).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
+  const cityBreakdown=Object.entries(cityMap).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
+  const siteBreakdown=Object.entries(siteMap).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
+  const priorityBreakdown=[{label:'2 - High',count:hiPri},{label:'3 - Moderate',count:modPri},{label:'4 - Low',count:lowPri}].filter(x=>x.count>0);
+  // ops/prj from actTypeMap
+  const realOps=actTypeMap['O&M']||actTypeMap['OM']||ops;
+  const realPrj=actTypeMap['Project']||prj;
+
+  return{updated:new Date().toISOString(),weekLabel:'W'+sessions.length+' — '+(sessions.length?sessions[sessions.length-1][0]:'Current'),kpis:{total:n,approved:ap,rejected:rj,approvalRate:apr,rejectedRate:Math.round(rj/tot*100),nsa,sa,saRate:sar,sessions:sessions.length,violations:vc,ops:realOps,prj:realPrj,highPriority:hiPri,moderate:modPri,low:lowPri,vi:viCount},timeline:tl,cabBreakdown:cabb,rfcBreakdown:rfcb,regionBreakdown,vendorBreakdown,projectBreakdown,actTypeBreakdown,priorityBreakdown,cityBreakdown,siteBreakdown,domain:{cats:DC,ops:co,prj:cp},topRequesters:tr,insights:ins};
 }
 /* ── EXCEL PARSERS ── */
 function parseWB(wb){
@@ -338,15 +352,22 @@ function parseSN(ws){
   const gi=(...ks)=>{for(const k of ks){const i=hdrs.findIndex(h=>h===k||h.toLowerCase()===k.toLowerCase());if(i>=0)return i;}return -1;};
 
   // Column indices - NOTE: Approval→CAB feedback, State→workflow
-  const ni=gi('Number'),acti=gi('Short description'),
+  const ni=gi('Number'),acti=gi('Short description','Description','Activity Summary'),
     reg1i=gi('Region.1'),regi=gi('Region'),
     rfi=gi('Change Types'),
-    apri=gi('Approval'),    // → CAB Feedback (Approved/Rejected/Pending)
-    stati=gi('State'),      // → CM Status (Closed/New/Canceled)
+    apri=gi('Approval'),
+    stati=gi('State'),
     impi=gi('Service Impact'),
+    visi2=gi('Visibility Impact'),
     reqi=gi('Requested by'),agi=gi('Assignment group'),
     pdi=gi('Planned start date','Created','Actual start date','CAB date'),opi=gi('Opened','Created'),
-    cati=gi('Category');
+    cati=gi('Category'),
+    prji=gi('Project Name'),
+    veni=gi('Name of Vendor'),
+    acttyi=gi('Activity Requested By'),
+    prii=gi('Priority'),
+    cityi=gi('City'),
+    sitei=gi('Sitename');
 
   const rd=[];
   for(let i=1;i<data.length;i++){
@@ -380,7 +401,7 @@ function parseSN(ws){
       cR.push([si,nR(regVal),rfc,cmStatus,cabFeedback,nI(g2(row,impi)),0,vi,nCat(g2(row,cati))]);
       let ri2=0;const req=g2(row,reqi)||g2(row,agi);
       if(req){const rk=req.substring(0,30);if(!reqMap[rk]){reqMap[rk]=reqIdx++;reqList.push(rk);}ri2=reqMap[rk];}
-      tR.push([wkDate,g2(row,ni),act.substring(0,60),regVal,'',CABS[cabFeedback]||'',CMS[cmStatus]||'','',ri2,g2(row,agi),vi]);
+      tR.push([wkDate,g2(row,ni),act.substring(0,60),regVal,'',CABS[cabFeedback]||'',CMS[cmStatus]||'','',ri2,g2(row,agi),vi,g2(row,prji),g2(row,veni),g2(row,acttyi),g2(row,prii),g2(row,visi2),g2(row,cityi),g2(row,sitei)]);
     });
     si++;
   });
