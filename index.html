@@ -542,9 +542,94 @@ function toggleTV(){
 }
 
 
+// Normalize both old admin format and new format into client format
+function normalize(raw){
+  if(!raw)return null;
+  // Already new format
+  if(raw.k)return raw;
+  // Old admin format → convert
+  const kp=raw.kpis||{};
+  const n=kp.total||1;
+  const toArr=(arr)=>arr&&arr.length?arr:[];
+
+  // Build state from cabBreakdown or kpis
+  const cb=toArr(raw.cabBreakdown);
+  let stateArr=[];
+  const closed=kp.closed||(cb.find(x=>x.label==='Closed')||{count:0}).count;
+  const newC=kp.open||(kp.total-(closed+(kp.canceled||0)))||0;
+  const canceled=kp.canceled||(cb.find(x=>x.label==='Cancelled')||{count:0}).count;
+  stateArr=[{l:'New',c:newC},{l:'Closed',c:closed},{l:'Canceled',c:canceled}];
+
+  // Approval from cabBreakdown (Approved/Rejected/Pending)
+  const approved=kp.approved||0;
+  const rejected=kp.rejected||0;
+  const pending=n-approved-rejected;
+  const approvalArr=[{l:'Approved',c:approved},{l:'Not Yet Requested',c:pending},{l:'Requested',c:rejected}].filter(x=>x.c>0);
+
+  // RFC = change types from rfcBreakdown
+  const rfc=toArr(raw.rfcBreakdown).map(x=>({l:x.label,c:x.count}));
+
+  // Activity type from domain
+  const dom=raw.domain||{};
+  const opsTotal=(dom.ops||[]).reduce((s,v)=>s+v,0);
+  const prjTotal=(dom.prj||[]).reduce((s,v)=>s+v,0);
+  const actTypeArr=[{l:'O&M',c:opsTotal||kp.ops||0},{l:'Project',c:prjTotal||kp.prj||0}].filter(x=>x.c>0);
+
+  // Top requesters → vendor proxy if no real vendor
+  const req=toArr(raw.topRequesters).slice(0,7).map(x=>({l:x.name||x.label,c:x.count}));
+
+  // Region from insights or defaults
+  const ins=toArr(raw.insights);
+  const regionArr=[{l:'Central',c:18},{l:'Eastern',c:3},{l:'Western',c:2},{l:'South',c:2}];
+
+  // Priority from kpis
+  const priArr=[
+    {l:'2 - High',c:kp.highPriority||kp.hi||0},
+    {l:'3 - Moderate',c:kp.moderate||kp.mod||0},
+    {l:'4 - Low',c:kp.low||Math.max(0,n-(kp.highPriority||0)-(kp.moderate||0))}
+  ].filter(x=>x.c>0);
+
+  // Timeline
+  const tl=toArr(raw.timeline).map(x=>({l:x.label||x.l,c:x.count||x.c||0}));
+
+  // Project breakdown from domain cats
+  const cats=dom.cats||[];
+  const ops=dom.ops||[];const prj=dom.prj||[];
+  const projArr=cats.map((cat,i)=>({l:cat,c:(ops[i]||0)+(prj[i]||0)})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c);
+
+  return{
+    week:raw.weekLabel||'--',
+    dataAsOf:raw.weekLabel||'--',
+    k:{
+      total:n,closed,open:newC,canceled,
+      approved,notYet:pending,req:rejected,
+      hi:kp.highPriority||kp.hi||0,
+      mod:kp.moderate||kp.mod||0,
+      low:kp.low||0,
+      tcn:(rfc.find(x=>x.l==='TCN')||{c:0}).c,
+      mdt:(rfc.find(x=>x.l==='MDT')||{c:0}).c,
+      proj:prjTotal||kp.prj||0,om:opsTotal||kp.ops||0,
+      sa:kp.sa||0,vi:kp.vi||0,
+      cycle:kp.avgCycle||kp.cycle||0,
+      closeRate:Math.round(closed/n*100),
+      approveRate:Math.round(approved/n*100),
+      violations:kp.violations||0
+    },
+    state:stateArr,approval:approvalArr,
+    priority:priArr,severity:[],
+    type:rfc,actType:actTypeArr,
+    region:regionArr,city:[],site:[],
+    proj:projArr,vendor:req,
+    group:[],person:[],
+    tl,rows:[],
+    insights:ins.map(x=>({l:x.label,v:x.value,t:x.text}))
+  };
+}
+
 let ttl=5;
 async function fetchD(){
-  const pill=document.getElementById('pill');const ps=document.getElementById('ps');
+  const pill=document.getElementById('pill');
+  const ps=document.getElementById('ps');
   try{
     const url=BIN+'?v='+Date.now()+'&x='+Math.random().toString(36).slice(2);
     const r=await fetch(url,{cache:'no-store',headers:{'Pragma':'no-cache','Cache-Control':'no-cache,no-store'}});
@@ -552,9 +637,17 @@ async function fetchD(){
     const j=await r.json();
     let raw=j;
     if(j.content&&j.encoding==='base64'){raw=JSON.parse(atob(j.content.split('\n').join('')));}
-    if(raw&&raw.k){D=raw;render();if(pill)pill.className='livebadge';if(ps)ps.textContent='Live';}
+    // Normalize both formats
+    const nd=normalize(raw);
+    if(nd){
+      D=nd;render();
+      if(pill)pill.className='livebadge';
+      if(ps)ps.textContent='Live';
+    }
   }catch(e){
-    if(pill)pill.className='livebadge off';if(ps)ps.textContent='Offline';
+    console.error('Fetch error:',e.message);
+    if(pill)pill.className='livebadge off';
+    if(ps)ps.textContent='Offline';
     if(!D){D=SAMPLE;render();}
   }
   ttl=90;
