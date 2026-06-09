@@ -265,7 +265,23 @@ function buildPayload(CD,TD){
     {label:'Lead RFC Type',value:tf[0]&&tf[0][0]<F.length?F[+tf[0][0]]:'--',text:tf[0]?tf[0][1]+' change requests':'--'},
     {label:'SA Impact',value:sar+'%',text:sa+' service-affecting — '+(sar>35?'⚠ High':'Normal')},
   ];
-  return{updated:new Date().toISOString(),weekLabel:'W'+sessions.length+' — '+(sessions.length?sessions[sessions.length-1][0]:'Current'),kpis:{total:n,approved:ap,rejected:rj,approvalRate:apr,rejectedRate:Math.round(rj/tot*100),nsa,sa,saRate:sar,sessions:sessions.length,violations:vc,ops,prj},timeline:tl,cabBreakdown:cabb,rfcBreakdown:rfcb,domain:{cats:DC,ops:co,prj:cp},topRequesters:tr,insights:ins};
+  
+  // Build region breakdown from rows
+  const regCounts={};rows.forEach(r=>{const rv=R[r[1]]||'Unknown';regCounts[rv]=(regCounts[rv]||0)+1;});
+  const regionBreakdown=Object.entries(regCounts).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
+  // Build vendor/project breakdown
+  const vendorMap={};const projMap={};
+  (TD.rows||[]).forEach(r=>{
+    if(r[9])vendorMap[r[9]]=(vendorMap[r[9]]||0)+1;
+    if(r[2])projMap[r[2]]=(projMap[r[2]]||0)+1;
+  });
+  const vendorBreakdown=Object.entries(vendorMap).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
+  const projectBreakdown=Object.entries(projMap).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
+  // Priority breakdown
+  const priMap={};rows.forEach(r=>{
+    const pLabel=r.length>9?'Unknown':'Unknown';
+  });
+  return{updated:new Date().toISOString(),weekLabel:'W'+sessions.length+' — '+(sessions.length?sessions[sessions.length-1][0]:'Current'),kpis:{total:n,approved:ap,rejected:rj,approvalRate:apr,rejectedRate:Math.round(rj/tot*100),nsa,sa,saRate:sar,sessions:sessions.length,violations:vc,ops,prj},timeline:tl,cabBreakdown:cabb,rfcBreakdown:rfcb,regionBreakdown,vendorBreakdown,projectBreakdown,domain:{cats:DC,ops:co,prj:cp},topRequesters:tr,insights:ins};
 }
 /* ── EXCEL PARSERS ── */
 function parseWB(wb){
@@ -310,6 +326,7 @@ function parseSN(ws){
   const nC=v=>{if(!v)return 3;const s=v.toString().trim().toLowerCase();
     if(s==='closed')return 0;
     if(s==='canceled'||s==='cancelled')return 1;
+    if(s==='authorize'||s==='authorized'||s==='implement')return 0;
     if(s==='scheduled')return 3;
     return 3;};
 
@@ -328,7 +345,7 @@ function parseSN(ws){
     stati=gi('State'),      // → CM Status (Closed/New/Canceled)
     impi=gi('Service Impact'),
     reqi=gi('Requested by'),agi=gi('Assignment group'),
-    pdi=gi('Planned start date'),opi=gi('Opened'),
+    pdi=gi('Planned start date','Created','Actual start date','CAB date'),opi=gi('Opened','Created'),
     cati=gi('Category');
 
   const rd=[];
