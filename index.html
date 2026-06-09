@@ -573,7 +573,13 @@ function normalize(raw){
   const dom=raw.domain||{};
   const opsTotal=(dom.ops||[]).reduce((s,v)=>s+v,0);
   const prjTotal=(dom.prj||[]).reduce((s,v)=>s+v,0);
-  const actTypeArr=[{l:'O&M',c:opsTotal||kp.ops||0},{l:'Project',c:prjTotal||kp.prj||0}].filter(x=>x.c>0);
+  // Activity type: try actTypeBreakdown first
+  let actTypeArr=[];
+  if(raw.actTypeBreakdown&&raw.actTypeBreakdown.length){
+    actTypeArr=raw.actTypeBreakdown.map(x=>({l:x.label||x.l,c:x.count||x.c||0}));
+  } else {
+    actTypeArr=[{l:'O&M',c:opsTotal||kp.ops||0},{l:'Project',c:prjTotal||kp.prj||0}].filter(x=>x.c>0);
+  }
 
   // Top requesters → vendor proxy if no real vendor
   // Vendor: try vendorBreakdown first, then topRequesters
@@ -597,12 +603,17 @@ function normalize(raw){
     regionArr=[{l:'Central',c:18},{l:'Eastern',c:3},{l:'Western',c:2},{l:'South',c:2}];
   }
 
-  // Priority from kpis
-  const priArr=[
-    {l:'2 - High',c:kp.highPriority||kp.hi||0},
-    {l:'3 - Moderate',c:kp.moderate||kp.mod||0},
-    {l:'4 - Low',c:kp.low||Math.max(0,n-(kp.highPriority||0)-(kp.moderate||0))}
-  ].filter(x=>x.c>0);
+  // Priority: use priorityBreakdown from admin if available
+  let priArr=[];
+  if(raw.priorityBreakdown&&raw.priorityBreakdown.length){
+    priArr=raw.priorityBreakdown.map(x=>({l:x.label||x.l,c:x.count||x.c||0}));
+  } else {
+    priArr=[
+      {l:'2 - High',c:kp.highPriority||kp.hi||0},
+      {l:'3 - Moderate',c:kp.moderate||kp.mod||0},
+      {l:'4 - Low',c:kp.low||Math.max(0,n-(kp.highPriority||0)-(kp.moderate||0))}
+    ].filter(x=>x.c>0);
+  }
 
   // Timeline
   const tl=toArr(raw.timeline).map(x=>({l:x.label||x.l,c:x.count||x.c||0}));
@@ -630,10 +641,11 @@ function normalize(raw){
       hi:kp.highPriority||kp.hi||0,
       mod:kp.moderate||kp.mod||0,
       low:kp.low||Math.max(0,n-(kp.highPriority||0)-(kp.moderate||0)),
+      vi:kp.vi||kp.visibilityImpact||0,
       tcn:tcnCount||kp.tcn||0,
       mdt:mdtCount||kp.mdt||0,
-      proj:prjTotal||kp.prj||0,
-      om:opsTotal||kp.ops||0,
+      proj:(actTypeArr.find(x=>x.l==='Project')||{c:0}).c||prjTotal||kp.prj||0,
+      om:(actTypeArr.find(x=>x.l==='O&M')||{c:0}).c||opsTotal||kp.ops||0,
       sa:kp.sa||0,vi:kp.vi||0,
       cycle:kp.avgCycle||kp.cycle||0,
       closeRate:Math.round(closed/n*100),
