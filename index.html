@@ -53,7 +53,7 @@ body{display:grid;grid-template-rows:52px 86px 1fr;gap:0}
 .body{display:grid;grid-template-columns:1fr 1.55fr;gap:0;min-height:0}
 .left{padding:7px 7px 7px 18px;display:grid;
   grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr .5fr;gap:7px;min-height:0}
-.imp-row{grid-column:span 2;display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.imp-row{grid-column:span 2;display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
 .right{padding:7px 18px 7px 7px;display:grid;
   grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:7px}
 .cc{background:var(--c1);border:1px solid var(--br);border-radius:11px;
@@ -140,24 +140,25 @@ body.tv-patrol .patrol-progress{display:block}
 .patrol-progress{display:none}
 
 /* Live pulse on KPI values in TV */
-body.tv-patrol .kv{animation:livePulse 4s ease infinite}
+body.tv-patrol .kv{animation:livePulse 4s ease infinite;font-size:40px !important}
 @keyframes livePulse{0%,100%{opacity:1}50%{opacity:.75}}
 
 /* Data overlay on patrol active card */
 .data-overlay{
-  position:fixed;top:50%;right:20px;transform:translateY(-50%);
-  background:rgba(10,13,20,.97);border:1px solid var(--tl);border-radius:12px;
-  padding:14px 18px;z-index:300;display:none;min-width:160px;
-  box-shadow:0 0 30px rgba(0,201,167,.25)
+  position:fixed;top:50%;right:24px;transform:translateY(-50%);
+  background:rgba(10,13,20,.97);border:2px solid var(--tl);border-radius:14px;
+  padding:18px 22px;z-index:300;display:none;min-width:200px;
+  box-shadow:0 0 40px rgba(0,201,167,.35)
 }
 body.tv-patrol .data-overlay{display:block}
-.ov-title{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;
-  color:var(--tl);margin-bottom:8px;border-bottom:1px solid var(--br);padding-bottom:6px}
+.ov-title{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.12em;
+  color:var(--tl);margin-bottom:10px;border-bottom:1px solid var(--br);padding-bottom:8px;
+  text-shadow:0 0 15px rgba(0,201,167,.5)}
 .ov-row{display:flex;justify-content:space-between;align-items:center;
-  padding:3px 0;border-bottom:1px solid rgba(31,42,66,.4)}
+  padding:6px 0;border-bottom:1px solid rgba(31,42,66,.4)}
 .ov-row:last-child{border:none}
-.ov-lbl{font-size:9.5px;color:var(--t2);font-weight:600}
-.ov-val{font-size:11px;font-weight:900;margin-left:12px}
+.ov-lbl{font-size:12px;color:var(--t2);font-weight:700}
+.ov-val{font-size:28px;font-weight:900;margin-left:16px}
 </style></head><body>
 <div class="hdr">
   <div class="htitle">
@@ -224,7 +225,7 @@ body.tv-patrol .data-overlay{display:block}
     <div class="imp-row">
       <div class="imp-card imp-sa"><div class="imp-lbl">&#9888; Service Impact</div><div class="imp-val" style="color:#ff3355" id="imp_sa">1</div><div class="imp-sub">SA events</div></div>
       <div class="imp-card imp-vi"><div class="imp-lbl">&#128065; Visibility Impact</div><div class="imp-val" style="color:#ffc800" id="imp_vi">2</div><div class="imp-sub">VI events</div></div>
-      <div class="imp-card imp-cy"><div class="imp-lbl">&#128336; Avg Cycle Time</div><div class="imp-val" style="color:#00c9a7" id="imp_cycle">16.5h</div><div class="imp-sub">creation to close</div></div>
+
       <div class="imp-card imp-ap"><div class="imp-lbl">&#10003; Approve Rate</div><div class="imp-val" style="color:#00d68f" id="imp_approve">44%</div><div class="imp-sub">of total requests</div></div>
     </div>
   </div>
@@ -281,14 +282,14 @@ tick();setInterval(tick,1000);
 
 const mkC=(id,cfg)=>{if(CI[id])CI[id].destroy();const el=document.getElementById(id);if(el)CI[id]=new Chart(el,cfg);};
 
-const DLD=()=>({color:'#fff',font:{size:12,weight:'900'},
-  formatter:(v,ctx)=>{const t=ctx.chart.data.datasets[0].data.reduce((a,b)=>a+(+b||0),0);const p=Math.round(v/t*100);return p<6?'':p+'%';},
+const DLD=()=>({color:'#fff',font:{size:13,weight:'900'},
+  formatter:(v)=>Number(v)>=0?String(v):'',
   backgroundColor:ctx=>ctx.dataset.backgroundColor[ctx.dataIndex]+'cc',
-  borderRadius:4,padding:{top:2,bottom:2,left:4,right:4}});
+  borderRadius:5,padding:{top:2,bottom:2,left:5,right:5}});
 const DLB=(sz)=>({color:dlc(),font:{size:sz||13,weight:'900'},anchor:'end',align:'end',offset:4,
-  formatter:v=>v>0?v:'',backgroundColor:dlbg(),borderRadius:4,padding:{top:2,bottom:2,left:4,right:4}});
+  formatter:v=>v!=null?v:'',backgroundColor:dlbg(),borderRadius:4,padding:{top:2,bottom:2,left:5,right:5}});
 const DLH=(sz)=>({color:dlc(),font:{size:sz||12,weight:'900'},anchor:'end',align:'right',offset:4,
-  formatter:v=>v>0?v:'',backgroundColor:dlbg(),borderRadius:4,padding:{top:1,bottom:1,left:4,right:4}});
+  formatter:v=>v!=null?v:'',backgroundColor:dlbg(),borderRadius:4,padding:{top:1,bottom:1,left:4,right:4}});
 
 const bO=()=>({responsive:true,maintainAspectRatio:false,
   plugins:{legend:{display:false},datalabels:{display:false}},
@@ -417,7 +418,7 @@ function drawImpact(d){
   const k=d.k;
   const el=document.getElementById('imp_sa');if(el)el.textContent=k.sa||0;
   const el2=document.getElementById('imp_vi');if(el2)el2.textContent=k.vi||0;
-  const el3=document.getElementById('imp_cycle');if(el3)el3.textContent=k.cycle+'h';
+
   const el4=document.getElementById('imp_approve');if(el4)el4.textContent=k.approveRate+'%';
 }
 
@@ -501,7 +502,7 @@ function patrolActivate(idx){
   if(ov&&D){
     const rows=PATROL_CARDS[idx].getData();
     if(title)title.textContent=PATROL_CARDS[idx].name;
-    ov.innerHTML=rows.map(r=>'<div class="ov-row"><span class="ov-lbl">'+r.l+'</span><span class="ov-val" style="color:#00c9a7">'+r.v+'</span></div>').join('');
+    ov.innerHTML=rows.map(r=>'<div class="ov-row"><span class="ov-lbl">'+r.l+'</span><span class="ov-val" style="color:#00c9a7;font-size:26px;font-weight:900;text-shadow:0 0 12px rgba(0,201,167,.7)">'+r.v+'</span></div>').join('');
   }
   // Progress bar reset
   const prog=document.getElementById('patrolProg');
